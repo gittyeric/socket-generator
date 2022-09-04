@@ -164,9 +164,7 @@ describe('Client / Server', () => {
         const allOnesClient = allOnesContract.newClient(serverSocket)
         const allTruesStream = allOnesClient()
 
-        console.log('waiting 1')
         const firstYield = await allTruesStream.next()
-        console.log('waiting 2')
         const returnVal = await allTruesStream.next()
 
         expect(firstYield.done).toEqual(false)

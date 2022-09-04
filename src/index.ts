@@ -72,7 +72,8 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
 
       // Start listening for yields that match request ID
       const responseHandler = (chunk: ReturnWrapper<RETURN> | YieldWrapper<YIELD> | ErrorWrapper) => {
-        if (chunk.id === curReqId) {
+        const reqId = Array.isArray(chunk) ? chunk[0] : chunk.i
+        if (reqId === curReqId) {
           queue.enqueue(chunk)
         }
       }
@@ -107,7 +108,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
           cleanup()
           return chunk.r as Awaited<RETURN>
         } else {
-          yield chunk.y as YIELD
+          yield chunk[1] as YIELD
         }
       }
     } as ClientFn<PARAMS, YIELD, RETURN>
@@ -142,16 +143,13 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
               }
               if (next.done) {
                 const returnWrapper: ReturnWrapper<RETURN> = {
-                  id: request.id,
+                  i: request.id,
                   r: next.value,
                 }
                 socket.emit(responseTopic, returnWrapper)
                 return
               }
-              const yieldWrapper: YieldWrapper<YIELD> = {
-                id: request.id,
-                y: next.value,
-              }
+              const yieldWrapper: YieldWrapper<YIELD> = [request.id, next.value]
               socket.emit(responseTopic, yieldWrapper)
             } catch (e) {
               // Re-throw the remote generator's error on the client
@@ -159,7 +157,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
               const msg = errorMsg || `Unknown Endpoint error for contract '${uniqueName}'`
 
               const errorWrapper: ErrorWrapper = {
-                id: request.id,
+                i: request.id,
                 err: msg,
               }
               socket.emit(responseTopic, errorWrapper)
@@ -210,18 +208,15 @@ type RequestWrapper<REQ> = {
   req: REQ
 }
 
-type YieldWrapper<YIELD> = {
-  id: string
-  y: YIELD
-}
+type YieldWrapper<YIELD> = [string, YIELD]
 
 type ErrorWrapper = {
-  id: string
+  i: string
   err: string
 }
 
 type ReturnWrapper<RETURN> = {
-  id: string
+  i: string
   r: RETURN
 }
 
