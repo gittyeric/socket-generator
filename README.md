@@ -82,7 +82,6 @@ type Contract<PARAMS extends unknown[], YIELD, RETURN> = {
     socket: ClientSocket<any, any>, 
     timeoutMs?: number) => ClientFn<PARAMS, YIELD, RETURN>,
   newEndpoint: (
-    socket: ServerSocket<any, any>,
     responseGenerator: (...req: PARAMS) => AsyncGenerator<YIELD, RETURN, undefined> | Promise<RETURN>,
     logger?: (msg: string) => void) => Endpoint
 }
@@ -90,7 +89,7 @@ type Contract<PARAMS extends unknown[], YIELD, RETURN> = {
 
 ### ClientFn
 
- Creates an instance of an async generator that can be iterated to stream YIELDs from the parent Contract's endpoint, ending with a RETURN value when done
+An instance of an async generator that can be iterated to stream YIELDs from the parent Contract's endpoint, ending with a RETURN value when done
 
 ```
 type ClientFn<PARAMS extends unknown[], YIELD, RETURN> = (
@@ -100,7 +99,7 @@ type ClientFn<PARAMS extends unknown[], YIELD, RETURN> = (
 
 ### Endpoint
 
-After initializing contract.newEndpoint, you can bind many client sockets to the new Endpoint by calling bindClient.
+After initializing contract.newEndpoint, you can bind many incoming clients' sockets to the new Endpoint by calling bindClient.
 
 ```
 type Endpoint = {
