@@ -11,6 +11,10 @@ export type ClientFn<PARAMS extends unknown[], YIELD, RETURN> = (
   ...req: PARAMS
 ) => AsyncGenerator<YIELD, RETURN, undefined>
 
+export type Endpoint = {
+  bindClient: (socket: ServerSocket | ClientSocket) => void
+}
+
 /**
  * An instantiated Contract is a factory pattern than can then be used to either create the ClientFn (after
  * binding a client Socket.io socket) or an Endpoint (after binding both a server Socket.io socket and
@@ -19,9 +23,8 @@ export type ClientFn<PARAMS extends unknown[], YIELD, RETURN> = (
 export type Contract<PARAMS extends unknown[], YIELD, RETURN> = {
   newClient: (socket: ClientSocket<any, any>, timeoutMs?: number) => ClientFn<PARAMS, YIELD, RETURN>,
   newEndpoint: (
-    socket: ServerSocket<any, any>,
     responseGenerator: (...req: PARAMS) => AsyncGenerator<YIELD, RETURN, undefined> | Promise<RETURN>,
-    logger?: (msg: string) => void) => void
+    logger?: (msg: string) => void) => Endpoint
 }
 
 /**
@@ -39,7 +42,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
   const responseTopic = `_res_${uniqueName}`
   const requestTopic = `_req_${uniqueName}`
   function newClient(
-    socket: ClientSocket,
+    socket: ClientSocket | ServerSocket,
     timeoutMs: number = Number.POSITIVE_INFINITY,
   ): ClientFn<PARAMS, YIELD, RETURN> {
     let reqId = BigInt(1)
@@ -64,8 +67,8 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
       const disconnect = new Promise((res, rej) => {
         rejectWithDisconnect = rej
       })
-      socket.on('disconnect', () =>
-        rejectWithDisconnect!(new NetworkError('Network disconnected', 'network disconnect')))
+      const disconnectHandler = () => rejectWithDisconnect!(new NetworkError('Network disconnected', 'network disconnect'))
+      socket.on('disconnect', disconnectHandler)
 
       // Start listening for yields that match request ID
       const responseHandler = (chunk: ReturnWrapper<RETURN> | YieldWrapper<YIELD> | ErrorWrapper) => {
@@ -77,6 +80,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
 
       function cleanup() {
         socket.off(responseTopic, responseHandler)
+        socket.off('disconnect', disconnectHandler)
         clearTimeout((timeoutRef as unknown) as ReturnType<typeof setTimeout>)
       }
 
@@ -86,13 +90,12 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
       // Wait till queue shows a Result wrapper
       while (true) {
         const pendingChunk = queue.dequeue()
-        // Allow the timeout to potentially win the race and throw
+        // Allow the timeout or disconnect to potentially win the race and throw
         const winner = await Promise.race([pendingChunk, pendingTimeout, disconnect])
         if (isError(winner)) {
           cleanup()
           throw winner
         }
-        // Else we got a valid chunk!
         const chunk = await pendingChunk
 
         if (isErrorWrapper(chunk)) {
@@ -101,7 +104,6 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
         }
 
         if (isReturnWrapper(chunk)) {
-          // Cleanup all state!
           cleanup()
           return chunk.r as Awaited<RETURN>
         } else {
@@ -111,71 +113,81 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
     } as ClientFn<PARAMS, YIELD, RETURN>
   }
 
- /**
-  * Creates a new streaming endpoint endpoint specific to a particular client socket.  Call this once for each contract / Socket.io client pair.
-  * @param socket The socket received from a Socket.io endpoint `on.('connection')` callback
-  * @param responseGenerator The streaming async generator or async function that generates a response to the client
-  * @param logger An option logger to log client connection information
-  */
- function newEndpoint(
-    socket: ServerSocket,
+  /**
+   * Creates a new streaming endpoint endpoint specific to a particular client socket.  Call this once for each contract / Socket.io client pair.
+   * @param socket The socket received from a Socket.io endpoint `on.('connection')` callback
+   * @param responseGenerator The streaming async generator or async function that generates a response to the client
+   * @param logger An option logger to log client connection information
+   */
+  function newEndpoint(
     // Can be a plain async function if YIELD type is never, otherwise must be an async generator function
     responseGenerator: (...req: PARAMS) => AsyncGenerator<YIELD, RETURN, undefined> | Promise<RETURN>,
     logger?: (msg: string) => void,
   ) {
     const log = logger || NOOP_LOGGER
-    log(`Opening endpoint ${uniqueName} for ${socket.handshake.address}`)
-    const requestHandler = async (request: RequestWrapper<PARAMS>) => {
-      const gen = responseGenerator(...request.req)
-      const isGenerator: boolean = isIterResult(gen)
-      while (true) {
-        try {
-          const next = isGenerator ?
-            await (gen as AsyncGenerator<YIELD, RETURN, undefined>).next() :
-            { done: true, value: (await gen) as RETURN } as const
-          if (socket.disconnected) {
-            log(`Terminating in-flight response early, ${socket.handshake.address} disconnected`)
-            return
-          }
-          if (next.done) {
-            const returnWrapper: ReturnWrapper<RETURN> = {
-              id: request.id,
-              r: next.value,
-            }
-            socket.emit(responseTopic, returnWrapper)
-            return
-          }
-          const yieldWrapper: YieldWrapper<YIELD> = {
-            id: request.id,
-            y: next.value,
-          }
-          socket.emit(responseTopic, yieldWrapper)
-        } catch (e) {
-          // Re-throw the remote generator's error on the client
-          const errorMsg = isError(e) ? e.message : e
-          const msg = errorMsg || `Unknown Endpoint error for contract '${uniqueName}'`
+    return {
+      bindClient: (socket: ServerSocket | ClientSocket) => {
+        log(`Opening endpoint ${uniqueName} for ${getSocketId(socket)}`)
+        const requestHandler = async (request: RequestWrapper<PARAMS>) => {
+          const gen = responseGenerator(...request.req)
+          const isGenerator: boolean = isIterResult(gen)
+          while (true) {
+            try {
+              const next = isGenerator ?
+                await (gen as AsyncGenerator<YIELD, RETURN, undefined>).next() :
+                { done: true, value: (await gen) as RETURN } as const
+              if (socket.disconnected) {
+                log(`Terminating in-flight response early, ${getSocketId(socket)} disconnected`)
+                return
+              }
+              if (next.done) {
+                const returnWrapper: ReturnWrapper<RETURN> = {
+                  id: request.id,
+                  r: next.value,
+                }
+                socket.emit(responseTopic, returnWrapper)
+                return
+              }
+              const yieldWrapper: YieldWrapper<YIELD> = {
+                id: request.id,
+                y: next.value,
+              }
+              socket.emit(responseTopic, yieldWrapper)
+            } catch (e) {
+              // Re-throw the remote generator's error on the client
+              const errorMsg = isError(e) ? e.message : e
+              const msg = errorMsg || `Unknown Endpoint error for contract '${uniqueName}'`
 
-          const errorWrapper: ErrorWrapper = {
-            id: request.id,
-            err: msg,
+              const errorWrapper: ErrorWrapper = {
+                id: request.id,
+                err: msg,
+              }
+              socket.emit(responseTopic, errorWrapper)
+              const err = isError(e) ? e : new Error(JSON.stringify(e))
+              log(err.message)
+              return
+            }
           }
-          socket.emit(responseTopic, errorWrapper)
-          const err = isError(e) ? e : new Error(JSON.stringify(e))
-          log(err.message)
-          return
         }
+        socket.on(requestTopic, requestHandler)
+        socket.once('disconnect', () => {
+          log(`${getSocketId(socket)} disconnected from ${uniqueName}`)
+          socket.off(requestTopic, requestHandler)
+        })
       }
     }
-    socket.on(requestTopic, requestHandler)
-    socket.once('disconnect', () => {
-      log(`${socket.handshake.address} disconnected from ${uniqueName}`)
-      socket.off(requestTopic, requestHandler)
-    })
   }
   return {
     newClient,
     newEndpoint,
   }
+}
+
+function getSocketId(socket: ClientSocket | ServerSocket): string {
+  if (socket['handshake']) {
+    return (socket as ServerSocket).handshake.address
+  }
+  return 'remote'
 }
 
 export class NetworkError extends Error {
@@ -187,11 +199,11 @@ export class NetworkError extends Error {
   }
 }
 
-export function isNetworkError(e: any): e is NetworkError{
+export function isNetworkError(e: any): e is NetworkError {
   return isError(e) && ['network disconnect'].includes(e['cause'])
 }
 
-const NOOP_LOGGER = () => {}
+const NOOP_LOGGER = () => { }
 
 type RequestWrapper<REQ> = {
   id: string

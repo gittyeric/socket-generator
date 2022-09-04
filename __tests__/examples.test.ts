@@ -1,4 +1,4 @@
-import { Contract, isNetworkError, newContract, sleep } from "../src"
+import { Contract, Endpoint, isNetworkError, newContract, sleep } from "../src"
 import { Socket as ServerSocket } from "socket.io"
 import { Socket as ClientSocket, io as clientIO } from 'socket.io-client'
 import { Server } from "socket.io";
@@ -64,13 +64,12 @@ async function closeSockets(clientSockets: ClientSocket[], server: Server, serve
 }
 
 function newTestEndpoint<P extends unknown[], Y, R>(
-    socket: ServerSocket,
-    channel: Contract<P, Y, R>,
+    contract: Contract<P, Y, R>,
     toYield: Y[],
     toReturn: R,
     yieldDelay: number = 0,
-    yieldsTillError: number = Number.POSITIVE_INFINITY): void {
-    channel.newEndpoint(socket, async function* (...p: P) {
+    yieldsTillError: number = Number.POSITIVE_INFINITY): Endpoint {
+    return contract.newEndpoint(async function* (...p: P) {
         let i = 0
         for (const y of toYield) {
             if (yieldsTillError === i) {
@@ -90,11 +89,11 @@ describe('Client / Server', () => {
     it("should pass parameters to generator", async () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         const addOneContract = newContract<[number, number], number, number>('passParams')
-        addOneContract.newEndpoint(serverSocket, async function* (startNum: number, incrementAmount: number) {
+        addOneContract.newEndpoint(async function* (startNum: number, incrementAmount: number) {
             yield startNum
             yield startNum + incrementAmount
             return startNum + incrementAmount * 2
-        })
+        }).bindClient(serverSocket)
         const addOneClient = addOneContract.newClient(clientSocket)
         const addOneStream = addOneClient(10, 2)
 
@@ -115,9 +114,9 @@ describe('Client / Server', () => {
     it("should work with non-generator async functions too", async () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         const allOnesContract = newContract<never, never, number>('asyncFn')
-        allOnesContract.newEndpoint(serverSocket, async function () {
+        allOnesContract.newEndpoint(async function () {
             return 1
-        })
+        }).bindClient(serverSocket)
         const allOnesClient = allOnesContract.newClient(clientSocket)
         const allTruesStream = allOnesClient()
 
@@ -135,7 +134,8 @@ describe('Client / Server', () => {
     it("should yield and return the Endpoint generator function's values", async () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         const allOnesContract = newContract<never, 1, 1>('allOnes')
-        newTestEndpoint(serverSocket, allOnesContract, [1, 1], 1)
+        newTestEndpoint(allOnesContract, [1, 1], 1)
+            .bindClient(serverSocket)
         const allOnesClient = allOnesContract.newClient(clientSocket)
         const allTruesStream = allOnesClient()
 
@@ -156,10 +156,32 @@ describe('Client / Server', () => {
         await closeSockets([clientSocket], server, [serverSocket])
     })
 
+    it("should be bi-directional, server as a ClientFn and client as an Endpoint", async () => {
+        const { clientSocket, serverSocket, server } = await newClientServerSockets()
+        const allOnesContract = newContract<never, 1, 1>('bidirectional')
+        newTestEndpoint(allOnesContract, [1], 1)
+            .bindClient(clientSocket)
+        const allOnesClient = allOnesContract.newClient(serverSocket)
+        const allTruesStream = allOnesClient()
+
+        console.log('waiting 1')
+        const firstYield = await allTruesStream.next()
+        console.log('waiting 2')
+        const returnVal = await allTruesStream.next()
+
+        expect(firstYield.done).toEqual(false)
+        expect(firstYield.value).toEqual(1)
+        expect(returnVal.done).toEqual(true)
+        expect(returnVal.value).toEqual(1)
+
+        await closeSockets([clientSocket], server, [serverSocket])
+    })
+
     it("should work with no yields", async () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         const allOnesContract = newContract<never, 1, 1>('noYields')
-        newTestEndpoint(serverSocket, allOnesContract, [], 1)
+        newTestEndpoint(allOnesContract, [], 1)
+            .bindClient(serverSocket)
         const allOnesClient = allOnesContract.newClient(clientSocket)
         const allTruesStream = allOnesClient()
 
@@ -178,7 +200,8 @@ describe('Client / Server', () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         type SomeObj = { num: number, str: string }
         const allOnesContract = newContract<never, SomeObj, SomeObj>('objs')
-        newTestEndpoint(serverSocket, allOnesContract, [{ num: 1, str: "1" }, { num: 2, str: "2" }], { num: 3, str: "3" })
+        newTestEndpoint(allOnesContract, [{ num: 1, str: "1" }, { num: 2, str: "2" }], { num: 3, str: "3" })
+            .bindClient(serverSocket)
         const someObjsClient = allOnesContract.newClient(clientSocket)
         const someObjsStream = someObjsClient()
 
@@ -203,14 +226,14 @@ describe('Client / Server', () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         const buggyContract = newContract<never, number, number>('disconnecting')
         let lastYield = 0
-        buggyContract.newEndpoint(serverSocket, async function* () {
+        buggyContract.newEndpoint(async function* () {
             lastYield = 1
             yield 1
             await sleep(200)
             lastYield = 2
             yield 2
             return 2
-        })
+        }).bindClient(serverSocket)
         const buggyClient = buggyContract.newClient(clientSocket)
         const buggyStream = buggyClient()
 
@@ -260,13 +283,13 @@ describe('Client / Server', () => {
     it("should re-throw generator function errors to client", async () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         const buggyGenerator = newContract<never, number, number>('buggy')
-        buggyGenerator.newEndpoint(serverSocket, async function* () {
+        buggyGenerator.newEndpoint(async function* () {
             yield 1
             if (1 === 1) {
                 throw new Error(TEST_ERR_MESSAGE)
             }
             return 2
-        })
+        }).bindClient(serverSocket)
         const buggyClient = buggyGenerator.newClient(clientSocket)
         const buggyStream = buggyClient()
 
@@ -290,13 +313,13 @@ describe('Client / Server', () => {
     it("should re-throw generator function (non) errors to client", async () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
         const buggyGenerator = newContract<never, number, number>('buggy2')
-        buggyGenerator.newEndpoint(serverSocket, async function* () {
+        buggyGenerator.newEndpoint(async function* () {
             yield 1
             if (1 === 1) {
                 throw null
             }
             return 2
-        })
+        }).bindClient(serverSocket)
         const buggyClient = buggyGenerator.newClient(clientSocket)
         const buggyStream = buggyClient()
 
@@ -321,12 +344,12 @@ describe('Client / Server', () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
 
         const addOneContract = newContract<[number], number, number>('concurrent-contract')
-        addOneContract.newEndpoint(serverSocket, async function* (startNum: number) {
+        addOneContract.newEndpoint(async function* (startNum: number) {
             for (let j = 0; j < 20; j++) {
                 yield startNum + j
             }
             return startNum + 20
-        })
+        }).bindClient(serverSocket)
         const addOneClient = addOneContract.newClient(clientSocket)
         const streams = [] as AsyncGenerator<number, number, undefined>[]
         for (let i = 0; i < 20; i++) {
@@ -353,16 +376,17 @@ describe('Client / Server', () => {
         const streams = [] as AsyncGenerator<number, number, undefined>[]
         const clients = [] as ClientSocket[]
         const serverSockets = [] as ServerSocket[]
+        const endpoint = addOneContract.newEndpoint(async function* (startNum: number) {
+            for (let j = 0; j < 20; j++) {
+                yield startNum + j
+            }
+            return startNum + 20
+        })
         for (let i = 0; i < 50; i++) {
             const { clientSocket, serverSocket } = await newClientServerSockets(server)
             clients.push(clientSocket)
             serverSockets.push(serverSocket)
-            addOneContract.newEndpoint(serverSocket, async function* (startNum: number) {
-                for (let j = 0; j < 20; j++) {
-                    yield startNum + j
-                }
-                return startNum + 20
-            })
+            endpoint.bindClient(serverSocket)
         }
         for (let i = 0; i < 50; i++) {
             const addOneClient = addOneContract.newClient(await clients[i])
@@ -388,12 +412,12 @@ describe('Client / Server', () => {
         const streams = [] as AsyncGenerator<number, number, undefined>[]
         for (let i = 0; i < 100; i++) {
             const addOneContract = newContract<[number], number, number>('parallel-contract-' + i)
-            addOneContract.newEndpoint(serverSocket, async function* (startNum: number) {
+            addOneContract.newEndpoint(async function* (startNum: number) {
                 for (let j = 0; j < 100; j++) {
                     yield startNum + j
                 }
                 return startNum + 100
-            })
+            }).bindClient(serverSocket)
             const addOneClient = addOneContract.newClient(clientSocket)
             const addOneStream = addOneClient(i * 1000)
             streams.push(addOneStream)
