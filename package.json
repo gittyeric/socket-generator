@@ -1,6 +1,6 @@
 {
   "name": "socket-generator",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Turn any async generator / function into a Websocket stream in 2 lines.",
   "engineStrict": false,
   "main": "lib/src/index.js",
