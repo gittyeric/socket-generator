@@ -16,7 +16,7 @@ arguably the best Websocket streaming library, so why not make it easy to glue t
 
 ## Hello World Example:
 
-#### Define a async generator function for streaming (usually only on the server)
+#### Define an async generator function for streaming (usually only on the server)
 ```
 async function* wordGenerator(input: string) {
   const words = input.split(' ');
