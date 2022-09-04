@@ -51,6 +51,9 @@ for await (const word of wordGenerator) {
 
 See `__tests__/examples.test.ts` for all advanced usages and how to create Socket.io client / server sockets
 
+`Javascript note`: If you're not using Typescript :-(, just remove anywhere you see `<>` in example code and it'll work just the same, though
+you won't get typing benefits of a shared client / server Contract.
+
 ## API
 
 ### newContract
