@@ -26,19 +26,19 @@ async function* wordGenerator(input: string) {
 }
 ```
 
-#### Define a shared contract where client sends a single string parameter and endpoint streams / yields strings back
+#### Define a shared contract where client sends 1 string parameter and endpoint streams / yields strings back
 ```
-const helloWorldContract = newContract<[string], number, undefined>('hello_world');
+const helloContract = newContract<[string], string, undefined>('hello');
 ```
 
 #### Define a client (usually just on the frontend) that can issue requests
 ```
-const helloClient = helloWorldContract.newClient(clientSocket, 1);
+const helloClient = helloContract.newClient(clientSocket, 1);
 ```
 
 #### Define an endpoint (usually just on the server) that can respond to requests and define the generator function
 ```
-helloWorldContract.newEndpoint(wordGenerator).bindClient(serverSocket);
+helloContract.newEndpoint(wordGenerator).bindClient(serverSocket);
 ```
 
 #### Client streams the server's wordGenerator function remotely as if it was local!
@@ -49,7 +49,7 @@ for await (const word of wordGenerator) {
 }
 ```
 
-See `__tests__/examples.test.ts` for all advanced usage and how to create Socket.io client / server sockets
+See `__tests__/examples.test.ts` for all advanced usages and how to create Socket.io client / server sockets
 
 ## API
 
@@ -108,3 +108,7 @@ type Endpoint = {
 ## More Links
 
 See official [Socket.io v4 documentation](https://socket.io/docs/v4/).
+
+## Contributing
+
+I can't think of what more this lib needs but if you can think of something cool, [open a pull request or Issue](https://github.com/gittyeric/socket-generator).
