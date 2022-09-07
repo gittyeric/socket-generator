@@ -18,7 +18,7 @@ export declare class NetworkError extends Error {
     readonly cause: 'network disconnect';
     constructor(msg: string, cause: 'network disconnect');
 }
-export declare function isNetworkError(e: any): e is NetworkError;
+export declare function isNetworkError(e: unknown): e is NetworkError;
 export declare function sleep(ms: number): Promise<void>;
 export declare class BlockingQueue<T> {
     private resolvers;

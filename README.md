@@ -107,6 +107,12 @@ type Endpoint = {
 }
 ```
 
+## Supported parameter / yield return types
+
+Since all data must be passed over the wire, only JSON-supported types are allowed, except
+for the special case of `yield`ing or `return`ing `undefined`, which is supported on top
+of all JSON-compatible types.
+
 ## More Links
 
 See official [Socket.io v4 documentation](https://socket.io/docs/v4/).

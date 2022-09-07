@@ -435,6 +435,25 @@ describe('Client / Server', () => {
 
         await closeSockets([clientSocket], server, [serverSocket])
     })
+
+    it("should work with undefined yields and returns", async () => {
+        const { clientSocket, serverSocket, server } = await newClientServerSockets()
+        const allUndefinedContract = newContract<never, undefined, undefined>('returnUndefined')
+        newTestEndpoint(allUndefinedContract, [undefined], undefined)
+            .bindClient(serverSocket)
+        const allUndefinedClient = allUndefinedContract.newClient(clientSocket)
+        const allUndefinedStream = allUndefinedClient()
+
+        const yieldVal = await allUndefinedStream.next()
+        const returnVal = await allUndefinedStream.next()
+
+        expect(yieldVal.done).toEqual(false)
+        expect(yieldVal.value).toEqual(undefined)
+        expect(returnVal.done).toEqual(true)
+        expect(returnVal.value).toEqual(undefined)
+
+        await closeSockets([clientSocket], server, [serverSocket])
+    })
 })
 
 describe('Contract', () => {

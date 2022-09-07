@@ -50,7 +50,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
     return async function* newClientRequest(...req: PARAMS): AsyncGenerator<YIELD, RETURN, undefined> {
       // Reserve a new queue
       const curReqId = (reqId++).toString(36)
-      const queue = new BlockingQueue<YieldWrapper<YIELD> | ReturnWrapper<RETURN> | ErrorWrapper>()
+      const queue = new BlockingQueue<UndefinedWrapper<YIELD, RETURN> | YieldWrapper<YIELD> | ReturnWrapper<RETURN> | ErrorWrapper>()
 
       // Setup timeout
       let timeoutRef: ReturnType<typeof setTimeout> = setTimeout(() => { }, 0)
@@ -71,10 +71,11 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
       socket.on('disconnect', disconnectHandler)
 
       // Start listening for yields that match request ID
-      const responseHandler = (chunk: ReturnWrapper<RETURN> | YieldWrapper<YIELD> | ErrorWrapper) => {
-        const reqId = Array.isArray(chunk) ? chunk[0] : chunk.i
+      const responseHandler = (chunk: UndefinedWrapper<YIELD, RETURN> | ReturnWrapper<RETURN> | YieldWrapper<YIELD> | ErrorWrapper) => {
+        const unwrapped = unwrap(chunk)
+        const reqId = Array.isArray(unwrapped) ? unwrapped[0] : unwrapped.i
         if (reqId === curReqId) {
-          queue.enqueue(chunk)
+          queue.enqueue(unwrapped)
         }
       }
       socket.on(responseTopic, responseHandler)
@@ -105,12 +106,12 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
           cleanup()
           throw new Error(winner.err)
         }
-
-        if (isReturnWrapper(winner)) {
+        const unwrappedWinner = unwrap(winner)
+        if (isReturnWrapper(unwrappedWinner)) {
           cleanup()
-          return winner.r as Awaited<RETURN>
+          return unwrappedWinner.r as Awaited<RETURN>
         } else {
-          yield winner[1] as YIELD
+          yield unwrappedWinner[1] as YIELD
         }
       }
     } as ClientFn<PARAMS, YIELD, RETURN>
@@ -148,11 +149,11 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
                   i: request.id,
                   r: next.value,
                 }
-                socket.emit(responseTopic, returnWrapper)
+                socket.emit(responseTopic, wrapUndefinedReturn(returnWrapper))
                 return
               }
               const yieldWrapper: YieldWrapper<YIELD> = [request.id, next.value]
-              socket.emit(responseTopic, yieldWrapper)
+              socket.emit(responseTopic, wrapUndefinedYield(yieldWrapper))
             } catch (e) {
               // Re-throw the remote generator's error on the client
               const errorMsg = isError(e) ? e.message : e
@@ -199,7 +200,7 @@ export class NetworkError extends Error {
   }
 }
 
-export function isNetworkError(e: any): e is NetworkError {
+export function isNetworkError(e: unknown): e is NetworkError {
   return isError(e) && ['network disconnect'].includes(e['cause'])
 }
 
@@ -222,6 +223,10 @@ type ReturnWrapper<RETURN> = {
   r: RETURN
 }
 
+type UndefinedWrapper<Y, R> = {
+  u: YieldWrapper<Y> | ReturnWrapper<R>
+}
+
 export async function sleep(ms: number): Promise<void> {
   return new Promise((res, rej) => {
     setTimeout(() => {
@@ -230,7 +235,7 @@ export async function sleep(ms: number): Promise<void> {
   })
 }
 
-function isIterResult(obj: any): obj is { next: () => any } {
+function isIterResult(obj: any): obj is { next: () => unknown } {
   return typeof (obj) === 'object' && obj['next'] !== undefined && typeof (obj['next']) === 'function'
 }
 
@@ -238,12 +243,53 @@ function isError(e: any): e is Error {
   return e && typeof (e) === 'object' && e['message'] !== undefined && e['name'] !== undefined
 }
 
-function isReturnWrapper(r: ReturnWrapper<any> | YieldWrapper<any> | ErrorWrapper): r is ReturnWrapper<any> {
+function isReturnWrapper(r: ReturnWrapper<unknown> | YieldWrapper<unknown> | ErrorWrapper): r is ReturnWrapper<unknown> {
   return typeof r === 'object' && 'r' in r
 }
 
-function isErrorWrapper(r: ErrorWrapper | ReturnWrapper<any> | YieldWrapper<any>): r is ErrorWrapper {
+function isUndefinedWrapper(u: UndefinedWrapper<unknown, unknown> | ReturnWrapper<unknown> | YieldWrapper<unknown> | ErrorWrapper): u is UndefinedWrapper<unknown, unknown> {
+  return typeof u === 'object' && 'u' in u
+}
+
+function isErrorWrapper(r: UndefinedWrapper<unknown, unknown> | ErrorWrapper | ReturnWrapper<unknown> | YieldWrapper<unknown>): r is ErrorWrapper {
   return typeof r === 'object' && 'err' in r
+}
+
+function wrapUndefinedYield<Y, R>(toWrap: YieldWrapper<Y>): YieldWrapper<Y> | UndefinedWrapper<Y, R> {
+  if (toWrap[1] === undefined) {
+    return {
+      u: toWrap
+    }
+  }
+  return toWrap
+}
+
+function wrapUndefinedReturn<Y, R>(toWrap: ReturnWrapper<R>): ReturnWrapper<R> | UndefinedWrapper<Y, R> {
+  if (toWrap.r === undefined) {
+    return {
+      u: toWrap
+    }
+  }
+  return toWrap
+}
+
+function unwrap<Y, R, W extends ErrorWrapper | ReturnWrapper<R> | YieldWrapper<Y>>(
+  wrapped: UndefinedWrapper<Y, R> | W) : W {
+  if (isErrorWrapper(wrapped)) {
+    return wrapped
+  }
+  if (isUndefinedWrapper(wrapped)) {
+    const inner = wrapped.u
+    if (Array.isArray(inner)) {
+      return [inner[0], undefined] as W
+    } else {
+      return {
+        i: inner.i,
+        r: undefined,
+      } as W
+    }
+  }
+  return wrapped
 }
 
 type Resolver<T> = (r: T) => void
