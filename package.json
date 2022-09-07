@@ -1,6 +1,6 @@
 {
   "name": "socket-generator",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Turn any async generator / function into a Websocket stream in 2 lines.",
   "engineStrict": false,
   "main": "lib/src/index.js",
@@ -41,7 +41,8 @@
     "build": "npm run build:ts-js && npm run build:ts-types",
     "build:ts-js": "tsc -p tsconfig.json",
     "build:ts-types": "tsc -p tsconfig.release.json",
-    "deploy-dry": "npm run build && git status",
+    "publish-dry": "npm run build && git status",
+    "publish": "npm run build && npm run test && git status && git diff package.json && echo 'Continue publish?' && read i && npm publish",
     "watch": "tsc -w -p tsconfig.release.json",
     "test": "npm run test-only",
     "test-only": "jest --coverage -i --testTimeout=10000 --detectOpenHandles"
