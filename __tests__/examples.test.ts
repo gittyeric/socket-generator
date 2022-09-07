@@ -196,24 +196,27 @@ describe('Client / Server', () => {
 
     it("should handle objects", async () => {
         const { clientSocket, serverSocket, server } = await newClientServerSockets()
-        type SomeObj = { num: number, str: string }
+        type SomeObj = { num: number, str: string } | {} | string[]
         const allOnesContract = newContract<never, SomeObj, SomeObj>('objs')
-        newTestEndpoint(allOnesContract, [{ num: 1, str: "1" }, { num: 2, str: "2" }], { num: 3, str: "3" })
+        newTestEndpoint(allOnesContract, [{ num: 1, str: "1" }, {}, ['hello'], []], { num: 2, str: "2" })
             .bindClient(serverSocket)
         const someObjsClient = allOnesContract.newClient(clientSocket)
         const someObjsStream = someObjsClient()
 
         const firstYield = await someObjsStream.next()
         const secondYield = await someObjsStream.next()
+        const thirdYield = await someObjsStream.next()
+        const fourthYield = await someObjsStream.next()
         const returnVal = await someObjsStream.next()
         const repeatedReturnVal = await someObjsStream.next()
 
         expect(firstYield.done).toEqual(false)
         expect(firstYield.value).toMatchObject({ num: 1, str: "1" })
-        expect(secondYield.done).toEqual(false)
-        expect(secondYield.value).toMatchObject({ num: 2, str: "2" })
+        expect(secondYield.value).toEqual({})
+        expect(thirdYield.value).toEqual(['hello'])
+        expect(fourthYield.value).toEqual([])
         expect(returnVal.done).toEqual(true)
-        expect(returnVal.value).toMatchObject({ num: 3, str: "3" })
+        expect(returnVal.value).toMatchObject({ num: 2, str: "2" })
         expect(repeatedReturnVal.done).toEqual(true)
         expect(repeatedReturnVal.value).toEqual(undefined)
 

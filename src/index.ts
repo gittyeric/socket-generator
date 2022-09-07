@@ -64,8 +64,8 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
           : new Promise<Error>(() => { })
 
       let rejectWithDisconnect: undefined | ((err: NetworkError) => void) = undefined
-      const disconnect = new Promise((res, rej) => {
-        rejectWithDisconnect = rej
+      const disconnect = new Promise<NetworkError>((res, rej) => {
+        rejectWithDisconnect = res
       })
       const disconnectHandler = () => rejectWithDisconnect!(new NetworkError('Network disconnected', 'network disconnect'))
       socket.on('disconnect', disconnectHandler)
@@ -93,22 +93,24 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
         const pendingChunk = queue.dequeue()
         // Allow the timeout or disconnect to potentially win the race and throw
         const winner = await Promise.race([pendingChunk, pendingTimeout, disconnect])
+        if (isNetworkError(winner)) {
+          cleanup()
+          throw winner
+        }
         if (isError(winner)) {
           cleanup()
           throw winner
         }
-        const chunk = await pendingChunk
-
-        if (isErrorWrapper(chunk)) {
+        if (isErrorWrapper(winner)) {
           cleanup()
-          throw new Error(chunk.err)
+          throw new Error(winner.err)
         }
 
-        if (isReturnWrapper(chunk)) {
+        if (isReturnWrapper(winner)) {
           cleanup()
-          return chunk.r as Awaited<RETURN>
+          return winner.r as Awaited<RETURN>
         } else {
-          yield chunk[1] as YIELD
+          yield winner[1] as YIELD
         }
       }
     } as ClientFn<PARAMS, YIELD, RETURN>
