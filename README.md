@@ -2,6 +2,8 @@
 
 Turn any JS/TS async generator / function into a typed Websocket stream in 2 lines.
 
+[![Coverage Status](https://coveralls.io/repos/github/gittyeric/socket-generator/badge.svg?branch=master)](https://coveralls.io/github/gittyeric/socket-generator?branch=master)
+
 ## Why this?
 
 There wasn't any easy way to turn my server's simple async generator functions into a Websocket stream without a lot of fuss, and Socket.io is
