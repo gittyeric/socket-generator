@@ -3,9 +3,7 @@
 Turn any JS/TS async generator / function into a typed Websocket stream in 2 lines.
 
 [![Coverage Status](https://coveralls.io/repos/github/gittyeric/socket-generator/badge.svg?branch=master)](https://coveralls.io/github/gittyeric/socket-generator?branch=master)
-
 [![npm version](https://badge.fury.io/js/socket-generator.svg)](https://badge.fury.io/js/socket-generator)
-
 ![Build Passing](https://github.com/gittyeric/socket-generator/actions/workflows/job.yaml/badge.svg)
 
 
