@@ -15,6 +15,7 @@ const config: Config = {
     'src/**/*.{ts,tsx,js,jsx}',
     '!src/**/*.d.ts',
   ],
+  coverageReporters: ["lcov"]
 };
 
 export default config;
