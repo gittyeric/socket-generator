@@ -1,7 +1,7 @@
 import { Socket as ServerSocket } from "socket.io";
 import { Socket as ClientSocket } from 'socket.io-client';
 
-let uniqueNameSet = new Set<string>()
+const uniqueNameSet = new Set<string>()
 
 /**
  * Creates an instance of an async generator that can be iterated to stream YIELDs from
@@ -21,7 +21,7 @@ export type Endpoint = {
  * the contract's responseGenerator implementation)
  */
 export type Contract<PARAMS extends unknown[], YIELD, RETURN> = {
-  newClient: (socket: ClientSocket<any, any>, timeoutMs?: number) => ClientFn<PARAMS, YIELD, RETURN>,
+  newClient: (socket: ClientSocket<object, object>, timeoutMs?: number) => ClientFn<PARAMS, YIELD, RETURN>,
   newEndpoint: (
     responseGenerator: (...req: PARAMS) => AsyncGenerator<YIELD, RETURN, undefined> | Promise<RETURN>,
     logger?: (msg: string) => void) => Endpoint
@@ -56,7 +56,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
       let timeoutRef: ReturnType<typeof setTimeout> = setTimeout(() => { }, 0)
       const pendingTimeout =
         timeoutMs < Number.MAX_SAFE_INTEGER
-          ? new Promise<Error>((res, rej) => {
+          ? new Promise<Error>((res) => {
             timeoutRef = setTimeout(() => {
               res(new Error(`Request timed out for ${uniqueName}`))
             }, timeoutMs)
@@ -64,7 +64,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
           : new Promise<Error>(() => { })
 
       let rejectWithDisconnect: undefined | ((err: NetworkError) => void) = undefined
-      const disconnect = new Promise<NetworkError>((res, rej) => {
+      const disconnect = new Promise<NetworkError>((res) => {
         rejectWithDisconnect = res
       })
       const disconnectHandler = () => rejectWithDisconnect!(new NetworkError('Network disconnected', 'network disconnect'))
@@ -200,7 +200,7 @@ export class NetworkError extends Error {
   }
 }
 
-export function isNetworkError(e: unknown): e is NetworkError {
+export function isNetworkError(e: object): e is NetworkError {
   return isError(e) && ['network disconnect'].includes(e['cause'])
 }
 
@@ -228,18 +228,18 @@ type UndefinedWrapper<Y, R> = {
 }
 
 export async function sleep(ms: number): Promise<void> {
-  return new Promise((res, rej) => {
+  return new Promise((res) => {
     setTimeout(() => {
       res()
     }, ms)
   })
 }
 
-function isIterResult(obj: any): obj is { next: () => unknown } {
+function isIterResult(obj: object): obj is { next: () => unknown } {
   return typeof (obj) === 'object' && obj['next'] !== undefined && typeof (obj['next']) === 'function'
 }
 
-function isError(e: any): e is Error {
+function isError(e: object): e is Error {
   return e && typeof (e) === 'object' && e['message'] !== undefined && e['name'] !== undefined
 }
 

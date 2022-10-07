@@ -5,7 +5,7 @@ export declare type Endpoint = {
     bindClient: (socket: ServerSocket | ClientSocket) => void;
 };
 export declare type Contract<PARAMS extends unknown[], YIELD, RETURN> = {
-    newClient: (socket: ClientSocket<any, any>, timeoutMs?: number) => ClientFn<PARAMS, YIELD, RETURN>;
+    newClient: (socket: ClientSocket<object, object>, timeoutMs?: number) => ClientFn<PARAMS, YIELD, RETURN>;
     newEndpoint: (responseGenerator: (...req: PARAMS) => AsyncGenerator<YIELD, RETURN, undefined> | Promise<RETURN>, logger?: (msg: string) => void) => Endpoint;
 };
 export declare function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName: string): {
@@ -18,7 +18,7 @@ export declare class NetworkError extends Error {
     readonly cause: 'network disconnect';
     constructor(msg: string, cause: 'network disconnect');
 }
-export declare function isNetworkError(e: unknown): e is NetworkError;
+export declare function isNetworkError(e: object): e is NetworkError;
 export declare function sleep(ms: number): Promise<void>;
 export declare class BlockingQueue<T> {
     private resolvers;

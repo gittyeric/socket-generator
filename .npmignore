@@ -2,3 +2,8 @@ __tests__/
 .vscode/
 dist/
 coverage/
+.eslintignore
+.eslintrc.js
+.gitignore
+babel.config.js
+jest.config.ts
