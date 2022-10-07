@@ -59,6 +59,14 @@ See `__tests__/examples.test.ts` for all advanced usages and how to create Socke
 `Javascript note`: If you're not using Typescript :-(, just remove anywhere you see `<>` in example code and it'll work just the same, though
 you won't get typing benefits of a shared client / server Contract.
 
+## Install
+
+Just install the NPM package with:
+
+```
+npm i socket-generator
+```
+
 ## API
 
 ### newContract
