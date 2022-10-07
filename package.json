@@ -21,6 +21,7 @@
     "type": "git",
     "url": "https://github.com/gittyeric/socket-generator"
   },
+  "homepage": "https://letsmakeit.com/socket-generator",
   "devDependencies": {
     "@babel/core": "^7.18.13",
     "@babel/preset-env": "^7.18.10",
