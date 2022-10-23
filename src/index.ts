@@ -131,8 +131,10 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
     const log = logger || NOOP_LOGGER
     return {
       bindClient: (socket: ServerSocket | ClientSocket) => {
-        log(`Opening endpoint ${uniqueName} for ${getSocketId(socket)}`)
+        const socketId = getSocketId(socket)
+        log(`Opening endpoint ${uniqueName} for ${socketId}`)
         const requestHandler = async (request: RequestWrapper<PARAMS>) => {
+          log(`Calling ${uniqueName} for ${socketId}. Req ID: ${request.id}`)
           const gen = responseGenerator(...request.req)
           const isGenerator: boolean = isIterResult(gen)
           while (true) {
@@ -141,7 +143,7 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
                 await (gen as AsyncGenerator<YIELD, RETURN, undefined>).next() :
                 { done: true, value: (await gen) as RETURN } as const
               if (socket.disconnected) {
-                log(`Terminating in-flight response early, ${getSocketId(socket)} disconnected`)
+                log(`Terminating in-flight response early, ${socketId} disconnected`)
                 return
               }
               if (next.done) {
@@ -165,14 +167,14 @@ export function newContract<PARAMS extends unknown[], YIELD, RETURN>(uniqueName:
               }
               socket.emit(responseTopic, errorWrapper)
               const err = isError(e) ? e : new Error(JSON.stringify(e))
-              log(err.message)
+              log(`${uniqueName} threw error: ${err.message}`)
               return
             }
           }
         }
         socket.on(requestTopic, requestHandler)
         socket.once('disconnect', () => {
-          log(`${getSocketId(socket)} disconnected from ${uniqueName}`)
+          log(`${socketId} disconnected from ${uniqueName}`)
           socket.off(requestTopic, requestHandler)
         })
       }
